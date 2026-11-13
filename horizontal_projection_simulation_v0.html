@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自由落下と水平投射のシミュレーション</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; margin:0; background:#f3f5f7; color:#18212b; }
+  main { max-width:1000px; margin:auto; padding:16px; }
+  h1 { font-size:clamp(20px,4vw,28px); margin:4px 0 8px; }
+  p { line-height:1.6; }
+  .panel { background:white; border-radius:14px; padding:14px; margin:12px 0; box-shadow:0 2px 10px #0000000d; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:end; }
+  label { display:grid; gap:5px; font-size:14px; }
+  input[type=number] { width:90px; padding:8px; border:1px solid #bbc4ce; border-radius:8px; font-size:16px; }
+  button { border:0; border-radius:9px; padding:10px 15px; font-size:15px; background:#1e5aa8; color:white; cursor:pointer; }
+  button.secondary { background:#596574; }
+  button:disabled { opacity:.45; cursor:default; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  canvas { display:block; width:100%; height:auto; background:white; border:1px solid #d8dee5; border-radius:10px; touch-action:pan-y; }
+  .stats { display:flex; flex-wrap:wrap; gap:8px 18px; font-variant-numeric:tabular-nums; font-size:14px; }
+  .hint { color:#536170; font-size:13px; }
+  input[type=range] { width:min(100%,520px); }
+  .swatches { display:flex; gap:14px; flex-wrap:wrap; font-size:14px; }
+  .dot { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:5px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>自由落下と水平投射のシミュレーション</h1>
+  <p>高さ20 mから同時に運動を開始します。A：自由落下、B：水平投射（5 m/s）、C：水平投射（10 m/s）、D：等速直線運動（0 m/s）。BとDは同じ水平位置から出発します。空気抵抗は無視します。</p>
+
+  <section class="panel">
+    <div class="controls">
+      <label>高さ（m）<input id="height" type="number" min="5" max="50" step="1" value="20"></label>
+      <label>Bの初速度（m/s）<input id="vB" type="number" min="0" max="20" step="1" value="5"></label>
+      <label>Cの初速度（m/s）<input id="vC" type="number" min="0" max="20" step="1" value="10"></label>
+      <label>等速直線運動の速さ（m/s）<input id="vD" type="number" min="0" max="20" step="1" value="0"></label>
+      <label>背景
+        <select id="bg" style="padding:9px;border:1px solid #bbc4ce;border-radius:8px;font-size:15px">
+          <option value="white">白</option><option value="black">黒</option>
+        </select>
+      </label>
+      <button id="apply" class="secondary">条件を反映</button>
+    </div>
+    <div class="actions">
+      <button id="play">▶ 再生</button>
+      <button id="pause" class="secondary">Ⅱ 一時停止</button>
+      <button id="step" class="secondary">1コマ進む</button>
+      <button id="reset" class="secondary">↺ 最初に戻す</button>
+      <button id="strobe" class="secondary">ストロボ：ON</button>
+      <button id="save" class="secondary">画像を保存</button>
+    </div>
+    <p class="hint">「条件を反映」を押すと設定が更新され、時間は0秒に戻ります。</p>
+  </section>
+
+  <section class="panel">
+    <canvas id="scene" width="900" height="520" aria-label="自由落下と水平投射のアニメーション"></canvas>
+    <div class="swatches" style="margin-top:10px">
+      <span><i class="dot" style="background:#e34b4b"></i>A：自由落下</span>
+      <span><i class="dot" style="background:#1687d9"></i>B：水平投射</span>
+      <span><i class="dot" style="background:#20a36b"></i>C：水平投射</span>
+      <span><i class="dot" style="background:#8b5cf6"></i>D：等速直線運動</span>
+    </div>
+    <div class="stats" style="margin-top:10px">
+      <span>経過時間：<strong id="time">0.00</strong> s</span>
+      <span>落下距離：<strong id="fall">0.00</strong> m</span>
+      <span>残り高さ：<strong id="remain">20.00</strong> m</span>
+      <span>着地予想時刻：<strong id="landing">2.02</strong> s</span>
+    </div>
+    <label style="margin-top:12px">時間を動かす（スライダー）
+      <input id="scrub" type="range" min="0" max="2.02" step="0.01" value="0">
+    </label>
+  </section>
+
+  <section class="panel">
+    <strong>観察のポイント</strong>
+    <ul>
+      <li>同じ時刻に、4つの物体の高さはどうなっているか。</li>
+      <li>BとDの水平方向の位置は、同じ速さのときどうなるか。</li>
+      <li>水平速度を変えると、鉛直方向の運動や着地時刻は変わるか。</li>
+      <li>ストロボをONにして、等時間ごとの位置を比べてみよう。</li>
+    </ul>
+    <p class="hint">モデル：鉛直方向は y = H − ½gt²、水平投射は x = v₀t（g = 9.8 m/s²）。地面に着いた後は位置を固定します。</p>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const canvas = $('scene'), ctx = canvas.getContext('2d');
+  let H = 20, vB = 5, vC = 10, vD = 0, t = 0, playing = false, last = 0, strobe = true;
+  const g = 9.8, duration = 1/60;
+  const landingTime = () => Math.sqrt(2*H/g);
+  const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
+  function setStats() {
+    const tl = landingTime(), tt = Math.min(t,tl), fall = .5*g*tt*tt;
+    $('time').textContent = t.toFixed(2);
+    $('fall').textContent = fall.toFixed(2);
+    $('remain').textContent = Math.max(0,H-fall).toFixed(2);
+    $('landing').textContent = tl.toFixed(2);
+    $('scrub').max = tl; $('scrub').value = Math.min(t,tl);
+  }
+  function draw() {
+    const dark = $('bg').value === 'black';
+    const bg = dark ? '#111820' : '#ffffff', fg = dark ? '#f1f5f9' : '#243140', grid = dark ? '#394654' : '#e6ebf0';
+    ctx.fillStyle=bg; ctx.fillRect(0,0,900,520);
+    const groundY=440, topY=65, left=95, right=835, scaleY=(groundY-topY)/H;
+    ctx.strokeStyle=grid; ctx.lineWidth=1;
+    for(let i=0;i<=5;i++){let y=topY+i*(groundY-topY)/5;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
+    ctx.strokeStyle=fg;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(55,groundY);ctx.lineTo(860,groundY);ctx.stroke();
+    ctx.fillStyle=fg;ctx.font='16px sans-serif';ctx.fillText('地面',810,groundY+28);ctx.fillText(`${H} m`,20,topY+5);
+    const tl=landingTime(), tt=Math.min(t,tl), fall=.5*g*tt*tt, y=groundY-(H-fall)*scaleY;
+    const starts=[{x:left,c:'#e34b4b',v:0,label:'A：自由落下'},{x:left+10,c:'#1687d9',v:vB,label:`B：${vB} m/s`},{x:left+20,c:'#20a36b',v:vC,label:`C：${vC} m/s`}];
+    const maxX=Math.max(10,vB*tl,vC*tl,vD*tl);
+    const xScale=690/Math.max(1,maxX);
+    starts.forEach((o,i)=>{
+      const startX=left+i*5, endX=startX+o.v*tt*xScale;
+      if(strobe){
+        for(let k=0;k<=Math.floor(tt/.2);k++){
+          let ts=k*.2, yy=groundY-(H-.5*g*ts*ts)*scaleY, xx=startX+o.v*ts*xScale;
+          ctx.globalAlpha=.32;ctx.fillStyle=o.c;ctx.beginPath();ctx.arc(xx,yy,5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+        }
+      }
+      ctx.fillStyle=o.c;ctx.beginPath();ctx.arc(endX,y,9,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=fg;ctx.font='bold 15px sans-serif';ctx.fillText(o.label,Math.min(730,endX+12),Math.max(28,y-14));
+    });
+    // D：高さを変えず、水平方向に一定の速さで進む等速直線運動
+    const dStartX=left+5, dX=dStartX+vD*tt*xScale, dY=topY;
+    if(strobe){
+      for(let k=0;k<=Math.floor(tt/.2);k++){
+        const ts=k*.2, xx=dStartX+vD*ts*xScale;
+        ctx.globalAlpha=.32;ctx.fillStyle='#8b5cf6';ctx.beginPath();ctx.arc(xx,dY,5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+      }
+    }
+    ctx.fillStyle='#8b5cf6';ctx.beginPath();ctx.arc(dX,dY,9,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=fg;ctx.font='bold 15px sans-serif';ctx.fillText(`D：等速 ${vD} m/s`,Math.min(730,dX+12),dY+25);
+    ctx.fillStyle=fg;ctx.font='14px sans-serif';ctx.fillText('※ 水平方向と鉛直方向の縮尺は異なります',95,490);
+    setStats();
+  }
+  function pause(){playing=false;$('play').disabled=false;}
+  function tick(now){
+    if(!playing)return;
+    if(!last)last=now;
+    const dt=Math.min((now-last)/1000,.05);last=now;
+    t=Math.min(landingTime(),t+dt);
+    draw();
+    if(t>=landingTime()){pause();return;}
+    requestAnimationFrame(tick);
+  }
+  $('play').addEventListener('click',()=>{if(t>=landingTime())t=0;playing=true;last=0;$('play').disabled=true;requestAnimationFrame(tick);});
+  $('pause').addEventListener('click',pause);
+  $('step').addEventListener('click',()=>{pause();t=Math.min(landingTime(),t+duration);draw();});
+  $('reset').addEventListener('click',()=>{pause();t=0;draw();});
+  $('apply').addEventListener('click',()=>{
+    H=clamp(Number($('height').value)||20,5,50);
+    vB=clamp(Number($('vB').value)||0,0,20);vC=clamp(Number($('vC').value)||0,0,20);vD=clamp(Number($('vD').value)||0,0,20);
+    $('height').value=H;$('vB').value=vB;$('vC').value=vC;$('vD').value=vD;
+    pause();t=0;draw();
+  });
+  $('bg').addEventListener('change',draw);
+  $('strobe').addEventListener('click',()=>{strobe=!strobe;$('strobe').textContent=`ストロボ：${strobe?'ON':'OFF'}`;draw();});
+  $('scrub').addEventListener('input',e=>{pause();t=Number(e.target.value);draw();});
+  $('save').addEventListener('click',()=>{
+    const a=document.createElement('a');a.download='horizontal_projection_simulation.png';a.href=canvas.toDataURL('image/png');a.click();
+  });
+  draw();
+})();
+</script>
+</body>
+</html>
